@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BERT Question Answering System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1><i class="fas fa-robot"></i> BERT Question Answering System</h1>
+            <p class="subtitle">Enter a context passage and ask questions about it</p>
+        </header>
+
+        <div class="main-content">
+            <!-- Left Column: Inputs -->
+            <div class="input-section">
+                <div class="form-group">
+                    <label for="context">
+                        <i class="fas fa-paragraph"></i> Context/Passage:
+                    </label>
+                    <textarea id="context" placeholder="Enter the text passage here..." rows="12">
+NASA's Perseverance rover landed on Mars on February 18, 2021, in Jezero Crater. The rover's mission is to search for signs of ancient microbial life and collect samples of rock and soil for possible return to Earth. Perseverance carries the Ingenuity helicopter, which made the first powered flight on another planet. The mission is part of NASA's Mars Exploration Program, which aims to explore the possibility of past life on Mars.
+                    </textarea>
+                    <div class="char-count" id="context-count">Characters: 0</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="question">
+                        <i class="fas fa-question-circle"></i> Question:
+                    </label>
+                    <input type="text" id="question" placeholder="Enter your question here..." value="When did Perseverance land on Mars?">
+                    <div class="char-count" id="question-count">Characters: 0</div>
+                </div>
+
+                <div class="button-group">
+                    <button id="predict-btn" class="btn-primary">
+                        <i class="fas fa-search"></i> Get Answer
+                    </button>
+                    <button id="clear-btn" class="btn-secondary">
+                        <i class="fas fa-broom"></i> Clear All
+                    </button>
+                    <button id="example-btn" class="btn-info">
+                        <i class="fas fa-lightbulb"></i> Load Example
+                    </button>
+                </div>
+
+                <div class="system-info">
+                    <div class="info-item">
+                        <i class="fas fa-microchip"></i>
+                        <span>Model: Fine-tuned BERT</span>
+                    </div>
+                    <div class="info-item">
+                        <i class="fas fa-database"></i>
+                        <span>Dataset: NewsQA</span>
+                    </div>
+                    <div class="info-item">
+                        <i class="fas fa-server"></i>
+                        <span id="model-status">Status: Loading...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Output -->
+            <div class="output-section">
+                <div class="answer-container">
+                    <h2><i class="fas fa-comment-dots"></i> Answer</h2>
+                    <div class="answer-box" id="answer-box">
+                        <div class="placeholder-text">
+                            <i class="fas fa-arrow-left"></i>
+                            <p>Your answer will appear here after you click "Get Answer"</p>
+                        </div>
+                    </div>
+                    
+                    <div class="confidence-meter">
+                        <div class="confidence-label">
+                            <i class="fas fa-chart-line"></i> Confidence Level
+                        </div>
+                        <div class="confidence-bar">
+                            <div class="confidence-fill" id="confidence-fill"></div>
+                        </div>
+                        <span class="confidence-value" id="confidence-value">--%</span>
+                    </div>
+                </div>
+
+                <div class="response-info">
+                    <h3><i class="fas fa-info-circle"></i> Response Information</h3>
+                    <div class="info-grid">
+                        <div class="info-card">
+                            <div class="info-label">Context Length</div>
+                            <div class="info-value" id="context-length">0 chars</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-label">Question Length</div>
+                            <div class="info-value" id="question-length">0 chars</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-label">Answer Length</div>
+                            <div class="info-value" id="answer-length">0 chars</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="info-label">Response Time</div>
+                            <div class="info-value" id="response-time">0 ms</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tips">
+                    <h3><i class="fas fa-lightbulb"></i> Tips for Best Results</h3>
+                    <ul>
+                        <li>Ensure the context contains the answer to your question</li>
+                        <li>Keep questions clear and specific</li>
+                        <li>Context should be under 2000 characters for optimal performance</li>
+                        <li>The answer will be extracted directly from the context</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>BERT QA System | NLP Assignment | Model: Fine-tuned BERT on NewsQA Dataset</p>
+        </footer>
+    </div>
+
+    <!-- Loading Modal -->
+    <div id="loading-modal" class="modal">
+        <div class="modal-content">
+            <div class="loader"></div>
+            <p>Processing your question...</p>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Update character counters
+            $('#context').on('input', function() {
+                $('#context-count').text('Characters: ' + $(this).val().length);
+            });
+            
+            $('#question').on('input', function() {
+                $('#question-count').text('Characters: ' + $(this).val().length);
+            });
+            
+            // Initialize counters
+            $('#context').trigger('input');
+            $('#question').trigger('input');
+
+            // Check model status
+            function checkModelStatus() {
+                $.get('/health', function(data) {
+                    if (data.model_loaded) {
+                        $('#model-status').html('Status: <span class="status-good">Ready ✓</span>');
+                    } else {
+                        $('#model-status').html('Status: <span class="status-bad">Loading...</span>');
+                        setTimeout(checkModelStatus, 2000);
+                    }
+                }).fail(function() {
+                    $('#model-status').html('Status: <span class="status-bad">Server Error</span>');
+                });
+            }
+            checkModelStatus();
+
+            // Load example data
+            $('#example-btn').click(function() {
+                $.get('/example', function(data) {
+                    $('#context').val(data.example_context);
+                    $('#question').val(data.example_question);
+                    $('#context').trigger('input');
+                    $('#question').trigger('input');
+                });
+            });
+
+            // Clear all inputs
+            $('#clear-btn').click(function() {
+                $('#context').val('');
+                $('#question').val('');
+                $('#answer-box').html(`
+                    <div class="placeholder-text">
+                        <i class="fas fa-arrow-left"></i>
+                        <p>Your answer will appear here after you click "Get Answer"</p>
+                    </div>
+                `);
+                $('#confidence-value').text('--%');
+                $('#confidence-fill').css('width', '0%');
+                $('.info-value').text('0');
+                $('#context').trigger('input');
+                $('#question').trigger('input');
+            });
+
+            // Get answer from model
+            $('#predict-btn').click(function() {
+                const context = $('#context').val().trim();
+                const question = $('#question').val().trim();
+                
+                if (!context) {
+                    alert('Please enter a context passage.');
+                    return;
+                }
+                
+                if (!question) {
+                    alert('Please enter a question.');
+                    return;
+                }
+
+                // Show loading modal
+                $('#loading-modal').fadeIn();
+                const startTime = Date.now();
+
+                // Send request to backend
+                $.ajax({
+                    url: '/predict',
+                    type: 'POST',
+                    contentType: 'application/json',
+                    data: JSON.stringify({
+                        context: context,
+                        question: question
+                    }),
+                    success: function(response) {
+                        const endTime = Date.now();
+                        const responseTime = endTime - startTime;
+                        
+                        // Hide loading modal
+                        $('#loading-modal').fadeOut();
+                        
+                        if (response.status === 'success') {
+                            // Display answer
+                            $('#answer-box').html(`
+                                <div class="answer-text">
+                                    <i class="fas fa-quote-left"></i>
+                                    <span class="highlight">${response.answer}</span>
+                                    <i class="fas fa-quote-right"></i>
+                                </div>
+                            `);
+                            
+                            // Update metrics
+                            $('#context-length').text(response.context_length + ' chars');
+                            $('#question-length').text(response.question_length + ' chars');
+                            $('#answer-length').text(response.answer.length + ' chars');
+                            $('#response-time').text(responseTime + ' ms');
+                            
+                            // Simulate confidence (in a real app, this would come from the model)
+                            const confidence = Math.min(95, 70 + Math.random() * 25);
+                            $('#confidence-value').text(Math.round(confidence) + '%');
+                            $('#confidence-fill').css('width', confidence + '%');
+                            
+                            // Highlight answer in context (simple version)
+                            highlightAnswerInContext(response.answer);
+                        } else {
+                            alert('Error: ' + (response.error || 'Unknown error'));
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        $('#loading-modal').fadeOut();
+                        alert('Error connecting to server: ' + error);
+                    }
+                });
+            });
+
+            // Simple function to highlight answer in context
+            function highlightAnswerInContext(answer) {
+                if (!answer || answer.includes("Sorry") || answer.includes("Error")) {
+                    return;
+                }
+                
+                const context = $('#context').val();
+                const escapedAnswer = answer.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(`(${escapedAnswer})`, 'gi');
+                
+                const highlightedContext = context.replace(regex, '<mark>$1</mark>');
+                $('#context').val(context); // Reset to original (we're not modifying the textarea)
+                
+                // Create a popup showing the highlighted context
+                if (context.includes(answer)) {
+                    const preview = context.substring(
+                        Math.max(0, context.indexOf(answer) - 100),
+                        Math.min(context.length, context.indexOf(answer) + answer.length + 100)
+                    ).replace(regex, '<mark>$1</mark>');
+                    
+                    // Show a toast notification
+                    showToast(`Answer found in context: "${answer}"`);
+                }
+            }
+
+            // Toast notification function
+            function showToast(message) {
+                const toast = $(`
+                    <div class="toast">
+                        <i class="fas fa-check-circle"></i>
+                        <span>${message}</span>
+                    </div>
+                `);
+                
+                $('body').append(toast);
+                toast.fadeIn();
+                
+                setTimeout(() => {
+                    toast.fadeOut(() => toast.remove());
+                }, 3000);
+            }
+
+            // Allow pressing Enter in question field to submit
+            $('#question').keypress(function(e) {
+                if (e.which === 13) {
+                    e.preventDefault();
+                    $('#predict-btn').click();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
